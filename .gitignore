@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+data/interim/
+data/processed/
+.env
+
+# Local project instructions, intentionally not committed
+CLAUDE.md

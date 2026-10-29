@@ -1,0 +1,34 @@
+[project]
+name = "cbce"
+version = "0.1.0"
+description = "Central Bank Communication Engine: stance scoring of central bank text and a yield event study"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pydantic>=2.7",  # schema validation for records and LLM output
+    "duckdb>=1.0",    # local analytical store
+    "pyarrow>=16",    # Parquet tables
+    "beautifulsoup4>=4.12",  # tolerant HTML parsing for bank sites
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",  # offline test suite
+    "ruff>=0.5",  # lint and format
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cbce"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
