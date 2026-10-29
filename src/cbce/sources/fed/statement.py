@@ -13,11 +13,13 @@ NEW_YORK = ZoneInfo("America/New_York")
 
 # Paragraphs that follow the policy text and carry no stance.
 _BOILERPLATE = re.compile(
-    r"^(Voting for|Voting against|For media inquiries|Implementation Note|In a related action)",
+    r"^(Voting for|Voting against|For media inquiries|Implementation Note|In a related action"
+    r"|In taking the discount rate action)",
     re.IGNORECASE,
 )
 _RELEASE_TIME = re.compile(r"(\d{1,2}):(\d{2})\s*([ap])\.m\.", re.IGNORECASE)
 _LEGACY_DATE = re.compile(r"Release Date:\s*([A-Z][a-z]+ \d{1,2}, \d{4})")
+_TITLE_SEPARATOR = re.compile(r"\s*--\s*")
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _LEGACY_PARAGRAPH = re.compile(r"<p\b[^>]*>", re.IGNORECASE)
 _LEGACY_TAIL = re.compile(r"<hr\b|<a\s+href=[\"']\.\./", re.IGNORECASE)
@@ -98,23 +100,25 @@ def _parse_current(article: Tag) -> ParsedStatement:
 
 def _parse_legacy(html: str, soup: BeautifulSoup) -> ParsedStatement:
     """Layout used until about 2005: a plain table with unclosed <p> tags."""
-    if soup.title is None or " -- " not in soup.title.get_text():
+    # "FRB: Press Release -- FOMC statement -- January 29, 2003"; the spaces around the
+    # dashes are missing on some pages.
+    parts = _TITLE_SEPARATOR.split(soup.title.get_text()) if soup.title else []
+    if len(parts) < 3:
         raise ParseError("unrecognised page title")
-    title = " -- ".join(soup.title.get_text().split(" -- ")[1:-1]).strip()
+    title = " -- ".join(parts[1:-1]).strip()
 
-    head = (
-        html[: re.search(r"<table", html, re.IGNORECASE).start()]
-        if "<table" in html.lower()
-        else html
-    )
+    # The body is the table cell with the most paragraphs. Everything above it, including
+    # a separate small table holding "For immediate release", is the page head.
+    cells = list(re.finditer(r"<td[^>]*>(.*?)</td>", html, re.IGNORECASE | re.DOTALL))
+    if not cells:
+        raise ParseError("no body cell")
+    cell = max(cells, key=lambda m: len(_LEGACY_PARAGRAPH.findall(m[1])))
+    head = html[: cell.start()]
     date = _LEGACY_DATE.search(head)
     if date is None:
         raise ParseError("no release date")
     published_at, precision = parse_release_time(date[1], head[date.end() :])
 
-    cell = re.search(r"<td[^>]*>(.*?)</td>", html, re.IGNORECASE | re.DOTALL)
-    if cell is None:
-        raise ParseError("no body cell")
     body = _COMMENT.sub("", cell[1])
     tail = _LEGACY_TAIL.search(body)  # navigation after the last paragraph
     if tail:

@@ -15,6 +15,7 @@ from cbce.store.schema import Bank, DocType
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CALENDAR = (FIXTURES / "fomc_calendar.html").read_text(encoding="utf-8")
+HISTORICAL_2000 = (FIXTURES / "fomc_historical_2000.html").read_text(encoding="utf-8")
 HISTORICAL_2003 = (FIXTURES / "fomc_historical_2003.html").read_text(encoding="utf-8")
 HISTORICAL_2006 = (FIXTURES / "fomc_historical_2006.html").read_text(encoding="utf-8")
 STATEMENT_2024 = (FIXTURES / "fomc_statement_2024-01-31.html").read_bytes()
@@ -203,6 +204,16 @@ def test_oldest_index_yields_the_eight_scheduled_meetings() -> None:
             DocType.OTHER_RELEASE,
             id="implementation_statement",
         ),
+        pytest.param(
+            "FOMC statement and Board discount rate action",
+            DocType.STATEMENT,
+            id="combined_with_discount_rate_action",
+        ),
+        pytest.param(
+            "FOMC statement: Federal Reserve and other central banks announce measures",
+            DocType.OTHER_RELEASE,
+            id="colon_subtitle_with_and_later_on",
+        ),
         pytest.param("", DocType.OTHER_RELEASE, id="empty_title"),
     ],
 )
@@ -214,3 +225,21 @@ def test_classify_tags_only_ordinary_statement_titles(title: str, expected: DocT
 
     # Assert
     assert result is expected
+
+
+@pytest.mark.parametrize(
+    "day",
+    [date(2000, 2, 2), date(2000, 6, 28), date(2000, 12, 19)],
+    ids=lambda d: d.isoformat(),
+)
+def test_earliest_index_uses_general_folder_links(day: date) -> None:
+    # Arrange: saved 2000 index, whose links are /boarddocs/press/general/YYYY/YYYYMMDD/
+
+    # Act
+    releases = {r.release_date: r for r in statement_releases(HISTORICAL_2000)}
+
+    # Assert
+    assert releases[day].url == (
+        f"https://www.federalreserve.gov/boarddocs/press/general/{day.year}/{day:%Y%m%d}/default.htm"
+    )
+    assert len(releases) == 8

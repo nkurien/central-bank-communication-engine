@@ -16,16 +16,19 @@ HISTORICAL_URL = BASE_URL + "/monetarypolicy/fomchistorical{year}.htm"
 # The calendar page covers this year onward; earlier years have one index page each.
 CALENDAR_FIRST_YEAR = 2021
 
-# The ordinary meeting statement carries one of these titles. Any other title on a statement
-# link (liquidity swaps, facility announcements, strategy updates) is not a meeting statement.
-STATEMENT_TITLES = frozenset({"FOMC statement", "Federal Reserve issues FOMC statement"})
+# The ordinary meeting statement has one of these titles, sometimes with "and <other action>"
+# when the Board announced a discount rate change alongside it. Any other title on a statement
+# link (liquidity swaps, which have a ": subtitle", facility announcements, strategy updates)
+# is not a meeting statement.
+_STATEMENT_TITLE = re.compile(r"^(Federal Reserve issues )?FOMC statement( and .+)?$")
 
 # Plain 'a' is the statement. 'a1' is the implementation note, 'b' and 'c' are other releases.
 # Old pages use /press/monetary/YYYYMMDDa.htm, current ones /pressreleases/monetaryYYYYMMDDa.htm.
 _STATEMENT_LINK = re.compile(r"monetary/?(\d{4})(\d{2})(\d{2})a\.htm$")
-# Until about 2005 each release is a folder: /boarddocs/press/monetary/2003/20030129/default.htm
+# Until about 2005 each release is a folder: /boarddocs/press/monetary/2003/20030129/ (or
+# .../general/2000/20000202/ for the earliest years), with the page at default.htm inside.
 # These do not redirect to the current scheme, so the link is used as given.
-_BOARDDOCS_LINK = re.compile(r"/boarddocs/press/monetary/\d{4}/(\d{4})(\d{2})(\d{2})/")
+_BOARDDOCS_LINK = re.compile(r"/boarddocs/press/(?:monetary|general)/\d{4}/(\d{4})(\d{2})(\d{2})/")
 
 
 def statement_releases(index_html: str) -> list[Release]:
@@ -47,7 +50,7 @@ def statement_releases(index_html: str) -> list[Release]:
 
 
 def classify(title: str) -> DocType:
-    return DocType.STATEMENT if title in STATEMENT_TITLES else DocType.OTHER_RELEASE
+    return DocType.STATEMENT if _STATEMENT_TITLE.match(title) else DocType.OTHER_RELEASE
 
 
 class FedAdapter:
