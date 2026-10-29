@@ -14,7 +14,7 @@ NEW_YORK = ZoneInfo("America/New_York")
 # Paragraphs that follow the policy text and carry no stance.
 _BOILERPLATE = re.compile(
     r"^(Voting for|Voting against|For media inquiries|Implementation Note|In a related action"
-    r"|In taking the discount rate action)",
+    r"|In taking the discount rate action|For immediate release|For release at)",
     re.IGNORECASE,
 )
 _RELEASE_TIME = re.compile(r"(\d{1,2}):(\d{2})\s*([ap])\.m\.", re.IGNORECASE)
@@ -23,6 +23,7 @@ _TITLE_SEPARATOR = re.compile(r"\s*--\s*")
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _LEGACY_PARAGRAPH = re.compile(r"<p\b[^>]*>", re.IGNORECASE)
 _LEGACY_TAIL = re.compile(r"<hr\b|<a\s+href=[\"']\.\./", re.IGNORECASE)
+_RELEASE_LINE = re.compile(r"For (?:immediate release|release at[^<\n]*)", re.IGNORECASE)
 _IMMEDIATE = re.compile(r"immediate release", re.IGNORECASE)
 
 Precision = Literal["minute", "day"]
@@ -107,23 +108,26 @@ def _parse_legacy(html: str, soup: BeautifulSoup) -> ParsedStatement:
         raise ParseError("unrecognised page title")
     title = " -- ".join(parts[1:-1]).strip()
 
-    # The body is the table cell with the most paragraphs. Everything above it, including
-    # a separate small table holding "For immediate release", is the page head.
+    date = _LEGACY_DATE.search(html)
+    release_line = _RELEASE_LINE.search(html)
+    if date is None:
+        raise ParseError("no release date")
+    if release_line is None:
+        raise ParseError("no release line")
+    published_at, precision = parse_release_time(date[1], release_line[0])
+
+    # The body is the table cell with the most paragraphs. On some pages that is an outer cell
+    # holding the whole page, so anything before the first <p> (logo, date, release line) is
+    # dropped: statement text always starts with a <p>.
     cells = list(re.finditer(r"<td[^>]*>(.*?)</td>", html, re.IGNORECASE | re.DOTALL))
     if not cells:
         raise ParseError("no body cell")
     cell = max(cells, key=lambda m: len(_LEGACY_PARAGRAPH.findall(m[1])))
-    head = html[: cell.start()]
-    date = _LEGACY_DATE.search(head)
-    if date is None:
-        raise ParseError("no release date")
-    published_at, precision = parse_release_time(date[1], head[date.end() :])
-
     body = _COMMENT.sub("", cell[1])
     tail = _LEGACY_TAIL.search(body)  # navigation after the last paragraph
     if tail:
         body = body[: tail.start()]
-    chunks = _LEGACY_PARAGRAPH.split(body)
+    chunks = _LEGACY_PARAGRAPH.split(body)[1:]
     return ParsedStatement(
         title=title,
         published_at=published_at,

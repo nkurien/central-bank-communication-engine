@@ -8,6 +8,8 @@ from cbce.sources.fed.statement import ParseError, parse_release_time, parse_sta
 FIXTURES = Path(__file__).parent / "fixtures"
 STATEMENT_2024_01_31 = (FIXTURES / "fomc_statement_2024-01-31.html").read_text(encoding="utf-8")
 STATEMENT_2000_02_02 = (FIXTURES / "fomc_statement_2000-02-02.html").read_text(encoding="utf-8")
+STATEMENT_2001_05_15 = (FIXTURES / "fomc_statement_2001-05-15.html").read_text(encoding="utf-8")
+STATEMENT_2004_12_14 = (FIXTURES / "fomc_statement_2004-12-14.html").read_text(encoding="utf-8")
 STATEMENT_2003_01_29 = (FIXTURES / "fomc_statement_2003-01-29.html").read_text(encoding="utf-8")
 STATEMENT_2003_12_09 = (FIXTURES / "fomc_statement_2003-12-09.html").read_text(encoding="utf-8")
 STATEMENT_2014_07_30 = (FIXTURES / "fomc_statement_2014-07-30.html").read_text(encoding="utf-8")
@@ -218,19 +220,29 @@ def test_parse_statement_handles_every_layout_seen_so_far(
     "html",
     [
         STATEMENT_2000_02_02,
+        STATEMENT_2001_05_15,
         STATEMENT_2003_01_29,
         STATEMENT_2003_12_09,
+        STATEMENT_2004_12_14,
         STATEMENT_2014_07_30,
         STATEMENT_2006_06_29,
         STATEMENT_2024_01_31,
     ],
-    ids=["2000", "2003", "2003_dec", "2014", "2006", "2024"],
+    ids=["2000", "2001", "2003", "2003_dec", "2004", "2014", "2006", "2024"],
 )
 def test_parsed_paragraphs_contain_no_navigation_votes_or_links(html: str) -> None:
     # Arrange / Act
     paragraphs = parse_statement(html).paragraphs
 
     # Assert
-    junk = ("Voting for", "Statement Regarding", "Home |", "Monetary policy", "Last update")
+    junk = (
+        "Voting for",
+        "Statement Regarding",
+        "Home |",
+        "Monetary policy",
+        "Last update",
+        "For immediate release",
+        "Release Date",
+    )
     assert not [p for p in paragraphs if any(marker in p for marker in junk)]
     assert all(p.endswith((".", "%")) for p in paragraphs)

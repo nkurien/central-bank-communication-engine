@@ -12,3 +12,6 @@ CLAUDE.md
 # Raw pages are re-fetchable and can grow large; only the folder is tracked
 data/raw/*
 !data/raw/.gitkeep
+
+# macOS
+.DS_Store
