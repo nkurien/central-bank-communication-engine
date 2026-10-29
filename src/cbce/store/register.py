@@ -17,6 +17,13 @@ class Outcome(StrEnum):
     CHANGED = "changed"  # same URL, different bytes: stored as a new version and flagged
 
 
+def document_id(parsed: ParsedDocument) -> str:
+    """Identity of a document is its wording, so a refetch of the same text is the same
+    document even when the page bytes differ (injected scripts, markup tweaks).
+    """
+    return raw.content_hash("\n".join([parsed.title, *parsed.paragraphs]).encode())
+
+
 def register_document(
     conn: duckdb.DuckDBPyConnection,
     raw_root: Path,
@@ -25,12 +32,12 @@ def register_document(
     parsed: ParsedDocument,
     fetched_at: datetime,
 ) -> tuple[Document, Outcome]:
-    """Store the raw bytes and add a documents row unless this exact content is known.
+    """Store the raw bytes and add a documents row unless this wording is already known.
 
     The record is validated before anything is written, so a bad timestamp leaves the
     raw store and the table untouched.
     """
-    doc_id = raw.content_hash(content)
+    doc_id = document_id(parsed)
     existing = conn.execute("SELECT 1 FROM documents WHERE doc_id = ?", [doc_id]).fetchone()
     url_seen = conn.execute(
         "SELECT 1 FROM documents WHERE source_url = ?", [release.url]
@@ -39,12 +46,12 @@ def register_document(
     document = Document(
         doc_id=doc_id,
         bank=release.bank,
-        doc_type=release.doc_type,
+        doc_type=parsed.doc_type,
         published_at=parsed.published_at,
         published_at_precision=parsed.published_at_precision,
         event_ts=parsed.event_ts,
         source_url=release.url,
-        raw_path=str(raw.raw_path(raw_root, doc_id)),
+        raw_path=str(raw.raw_path(raw_root, raw.content_hash(content))),
         fetched_at=fetched_at,
     )
     if existing:

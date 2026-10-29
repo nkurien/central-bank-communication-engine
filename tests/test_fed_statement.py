@@ -7,6 +7,8 @@ from cbce.sources.fed.statement import ParseError, parse_release_time, parse_sta
 
 FIXTURES = Path(__file__).parent / "fixtures"
 STATEMENT_2024_01_31 = (FIXTURES / "fomc_statement_2024-01-31.html").read_text(encoding="utf-8")
+STATEMENT_2003_01_29 = (FIXTURES / "fomc_statement_2003-01-29.html").read_text(encoding="utf-8")
+STATEMENT_2014_07_30 = (FIXTURES / "fomc_statement_2014-07-30.html").read_text(encoding="utf-8")
 STATEMENT_2006_06_29 = (FIXTURES / "fomc_statement_2006-06-29.html").read_text(encoding="utf-8")
 
 
@@ -167,3 +169,59 @@ def test_parse_statement_raises_on_unexpected_structure(html: str) -> None:
     # Act / Assert
     with pytest.raises(ParseError):
         parse_statement(html)
+
+
+@pytest.mark.parametrize(
+    ("html", "title", "published_utc", "paragraph_count", "last_starts_with"),
+    [
+        pytest.param(
+            STATEMENT_2003_01_29,
+            "FOMC statement",
+            datetime(2003, 1, 30, 4, 59, 59, tzinfo=UTC),
+            3,
+            "In these circumstances",
+            id="legacy_table_layout_2003",
+        ),
+        pytest.param(
+            STATEMENT_2014_07_30,
+            "Federal Reserve issues FOMC statement",
+            datetime(2014, 7, 31, 3, 59, 59, tzinfo=UTC),
+            6,
+            "When the Committee decides",
+            id="attachments_panel_layout_2014",
+        ),
+    ],
+)
+def test_parse_statement_handles_every_layout_seen_so_far(
+    html: str,
+    title: str,
+    published_utc: datetime,
+    paragraph_count: int,
+    last_starts_with: str,
+) -> None:
+    # Arrange: saved pages from layouts other than the 2006 and 2024 ones
+
+    # Act
+    parsed = parse_statement(html)
+
+    # Assert
+    assert parsed.title == title
+    assert parsed.published_at == published_utc
+    assert parsed.published_at_precision == "day"
+    assert len(parsed.paragraphs) == paragraph_count
+    assert parsed.paragraphs[-1].startswith(last_starts_with)
+
+
+@pytest.mark.parametrize(
+    "html",
+    [STATEMENT_2003_01_29, STATEMENT_2014_07_30, STATEMENT_2006_06_29, STATEMENT_2024_01_31],
+    ids=["2003", "2014", "2006", "2024"],
+)
+def test_parsed_paragraphs_contain_no_navigation_votes_or_links(html: str) -> None:
+    # Arrange / Act
+    paragraphs = parse_statement(html).paragraphs
+
+    # Assert
+    junk = ("Voting for", "Statement Regarding", "Home |", "Monetary policy", "Last update")
+    assert not [p for p in paragraphs if any(marker in p for marker in junk)]
+    assert all(p.endswith((".", "%")) for p in paragraphs)

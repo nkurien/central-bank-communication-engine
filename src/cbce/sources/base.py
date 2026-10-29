@@ -31,6 +31,7 @@ Fetcher = Callable[[str], FetchResult]
 @dataclass(frozen=True)
 class ParsedDocument:
     title: str
+    doc_type: DocType
     published_at: datetime
     published_at_precision: Literal["minute", "day"]
     event_ts: datetime

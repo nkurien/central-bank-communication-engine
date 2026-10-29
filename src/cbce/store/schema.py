@@ -18,6 +18,7 @@ class DocType(StrEnum):
     MINUTES = "minutes"
     PRESS_CONFERENCE = "press_conference"
     SPEECH = "speech"
+    OTHER_RELEASE = "other_release"  # liquidity, facility or strategy announcements
 
 
 class Stance(StrEnum):
@@ -58,7 +59,7 @@ class Document(Record):
     and `published_at` is the end of that day, so it is never earlier than the real release.
     """
 
-    doc_id: str  # hash of raw text
+    doc_id: str  # hash of the parsed text, stable across fetches
     bank: Bank
     doc_type: DocType
     published_at: datetime

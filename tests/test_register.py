@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from cbce.sources.base import ParsedDocument, Release
 from cbce.store import raw
 from cbce.store.ddl import create_schema
-from cbce.store.register import Outcome, register_document
+from cbce.store.register import Outcome, document_id, register_document
 from cbce.store.schema import Bank, DocType
 
 PUBLISHED = datetime(2024, 1, 31, 19, 0, tzinfo=UTC)
@@ -16,8 +16,12 @@ FETCHED = PUBLISHED + timedelta(hours=1)
 RELEASE = Release(Bank.FED, DocType.STATEMENT, "https://example.test/s", date(2024, 1, 31))
 
 
-def parsed(published_at: datetime = PUBLISHED) -> ParsedDocument:
-    return ParsedDocument("Statement", published_at, "minute", published_at, ("Text.",))
+def parsed(
+    paragraphs: tuple[str, ...] = ("Text.",),
+    doc_type: DocType = DocType.STATEMENT,
+    published_at: datetime = PUBLISHED,
+) -> ParsedDocument:
+    return ParsedDocument("Statement", doc_type, published_at, "minute", published_at, paragraphs)
 
 
 @pytest.fixture
@@ -42,8 +46,9 @@ def test_new_release_is_stored_and_registered(
 
     # Assert
     assert outcome is Outcome.NEW
-    assert document.doc_id == raw.content_hash(content)
-    assert raw.get(tmp_path, document.doc_id) == content
+    assert document.doc_id == document_id(parsed())
+    assert raw.get(tmp_path, raw.content_hash(content)) == content
+    assert Path(document.raw_path) == raw.raw_path(tmp_path, raw.content_hash(content))
     assert count(conn) == 1
 
 
@@ -66,20 +71,75 @@ def test_registering_same_content_again_changes_nothing(
     assert count(conn) == 1
 
 
-def test_changed_content_at_same_url_is_stored_as_new_version_and_flagged(
+def test_same_wording_with_different_bytes_is_the_same_document(
+    conn: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
+    # Arrange: e.g. a per-request script injected into the page
+    first, _ = register_document(conn, tmp_path, RELEASE, b"page <!-- ray 1 -->", parsed(), FETCHED)
+
+    # Act
+    second, outcome = register_document(
+        conn, tmp_path, RELEASE, b"page <!-- ray 2 -->", parsed(), FETCHED
+    )
+
+    # Assert
+    assert outcome is Outcome.UNCHANGED
+    assert second.doc_id == first.doc_id
+    assert count(conn) == 1
+
+
+def test_changed_wording_at_same_url_is_stored_as_new_version_and_flagged(
     conn: duckdb.DuckDBPyConnection, tmp_path: Path
 ) -> None:
     # Arrange
-    register_document(conn, tmp_path, RELEASE, b"original", parsed(), FETCHED)
+    first, _ = register_document(conn, tmp_path, RELEASE, b"original", parsed(("Old.",)), FETCHED)
 
     # Act
-    document, outcome = register_document(conn, tmp_path, RELEASE, b"revised", parsed(), FETCHED)
+    second, outcome = register_document(
+        conn, tmp_path, RELEASE, b"revised", parsed(("New.",)), FETCHED
+    )
 
     # Assert
     assert outcome is Outcome.CHANGED
+    assert second.doc_id != first.doc_id
     assert count(conn) == 2
     assert raw.get(tmp_path, raw.content_hash(b"original")) == b"original"
-    assert raw.get(tmp_path, document.doc_id) == b"revised"
+    assert raw.get(tmp_path, raw.content_hash(b"revised")) == b"revised"
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        pytest.param(("A.", "B."), ("A.", "B"), id="punctuation"),
+        pytest.param(("A.", "B."), ("B.", "A."), id="order"),
+        pytest.param(("A.",), ("A.", "B."), id="extra_paragraph"),
+    ],
+)
+def test_document_id_depends_on_exact_wording(
+    first: tuple[str, ...], second: tuple[str, ...]
+) -> None:
+    # Arrange / Act
+    id_first, id_second = document_id(parsed(first)), document_id(parsed(second))
+
+    # Assert
+    assert id_first != id_second
+
+
+@pytest.mark.parametrize("doc_type", [DocType.STATEMENT, DocType.OTHER_RELEASE])
+def test_doc_type_comes_from_the_parsed_document(
+    conn: duckdb.DuckDBPyConnection, tmp_path: Path, doc_type: DocType
+) -> None:
+    # Arrange: discovery said statement; the parsed title decides what it really is
+
+    # Act
+    document, _ = register_document(
+        conn, tmp_path, RELEASE, b"x", parsed(doc_type=doc_type), FETCHED
+    )
+
+    # Assert
+    assert document.doc_type is doc_type
+    stored = conn.execute("SELECT doc_type FROM documents").fetchone()[0]
+    assert stored == doc_type.value
 
 
 @pytest.mark.parametrize(

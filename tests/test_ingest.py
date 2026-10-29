@@ -97,7 +97,8 @@ def test_rerun_skips_known_urls_and_changes_nothing(
     ("changed_page", "expected_unchanged", "expected_changed"),
     [
         pytest.param(None, 2, 0, id="same_bytes"),
-        pytest.param(PAGE_2024 + b"<!-- edited -->", 1, 1, id="edited_page"),
+        pytest.param(PAGE_2024 + b"<!-- edited -->", 2, 0, id="markup_only_edit"),
+        pytest.param(PAGE_2024.replace(b"solid pace", b"strong pace"), 1, 1, id="wording_edit"),
     ],
 )
 def test_refetch_detects_changed_pages(

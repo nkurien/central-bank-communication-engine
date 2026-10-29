@@ -16,23 +16,38 @@ HISTORICAL_URL = BASE_URL + "/monetarypolicy/fomchistorical{year}.htm"
 # The calendar page covers this year onward; earlier years have one index page each.
 CALENDAR_FIRST_YEAR = 2021
 
+# The ordinary meeting statement carries one of these titles. Any other title on a statement
+# link (liquidity swaps, facility announcements, strategy updates) is not a meeting statement.
+STATEMENT_TITLES = frozenset({"FOMC statement", "Federal Reserve issues FOMC statement"})
+
 # Plain 'a' is the statement. 'a1' is the implementation note, 'b' and 'c' are other releases.
 # Old pages use /press/monetary/YYYYMMDDa.htm, current ones /pressreleases/monetaryYYYYMMDDa.htm.
 _STATEMENT_LINK = re.compile(r"monetary/?(\d{4})(\d{2})(\d{2})a\.htm$")
+# Until about 2005 each release is a folder: /boarddocs/press/monetary/2003/20030129/default.htm
+# These do not redirect to the current scheme, so the link is used as given.
+_BOARDDOCS_LINK = re.compile(r"/boarddocs/press/monetary/\d{4}/(\d{4})(\d{2})(\d{2})/")
 
 
 def statement_releases(index_html: str) -> list[Release]:
     """Statement releases linked from a calendar or yearly index page."""
     found: dict[date, Release] = {}
     for anchor in BeautifulSoup(index_html, "html.parser").find_all("a", href=True):
-        match = _STATEMENT_LINK.search(anchor["href"])
-        if match is None:
+        href = anchor["href"]
+        if match := _BOARDDOCS_LINK.search(href):
+            day = date(*map(int, match.groups()))
+            url = f"{BASE_URL}{match[0]}default.htm"
+        elif match := _STATEMENT_LINK.search(href):
+            day = date(*map(int, match.groups()))
+            # Other old-style URLs redirect to this form, so one scheme serves those years.
+            url = f"{BASE_URL}/newsevents/pressreleases/monetary{day:%Y%m%d}a.htm"
+        else:
             continue
-        day = date(*map(int, match.groups()))
-        # Old-style URLs redirect to this form, so one URL scheme serves every year.
-        url = f"{BASE_URL}/newsevents/pressreleases/monetary{day:%Y%m%d}a.htm"
         found[day] = Release(Bank.FED, DocType.STATEMENT, url, day)
     return [found[day] for day in sorted(found)]
+
+
+def classify(title: str) -> DocType:
+    return DocType.STATEMENT if title in STATEMENT_TITLES else DocType.OTHER_RELEASE
 
 
 class FedAdapter:
@@ -59,6 +74,7 @@ class FedAdapter:
         parsed = parse_statement(content.decode("utf-8"))
         return ParsedDocument(
             title=parsed.title,
+            doc_type=classify(parsed.title),
             published_at=parsed.published_at,
             published_at_precision=parsed.published_at_precision,
             event_ts=parsed.published_at,  # the statement is the market event

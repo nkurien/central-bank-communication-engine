@@ -4,11 +4,18 @@ from pathlib import Path
 import pytest
 
 from cbce.sources.base import FetchResult, Release
-from cbce.sources.fed.adapter import CALENDAR_URL, HISTORICAL_URL, FedAdapter, statement_releases
+from cbce.sources.fed.adapter import (
+    CALENDAR_URL,
+    HISTORICAL_URL,
+    FedAdapter,
+    classify,
+    statement_releases,
+)
 from cbce.store.schema import Bank, DocType
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CALENDAR = (FIXTURES / "fomc_calendar.html").read_text(encoding="utf-8")
+HISTORICAL_2003 = (FIXTURES / "fomc_historical_2003.html").read_text(encoding="utf-8")
 HISTORICAL_2006 = (FIXTURES / "fomc_historical_2006.html").read_text(encoding="utf-8")
 STATEMENT_2024 = (FIXTURES / "fomc_statement_2024-01-31.html").read_bytes()
 
@@ -154,3 +161,56 @@ def test_parse_marks_statement_as_the_market_event() -> None:
     assert parsed.published_at == datetime(2024, 1, 31, 19, 0, tzinfo=UTC)
     assert parsed.event_ts == parsed.published_at
     assert len(parsed.paragraphs) == 4
+
+
+@pytest.mark.parametrize(
+    "day",
+    [date(2003, 1, 29), date(2003, 3, 18), date(2003, 8, 12), date(2003, 12, 9)],
+    ids=lambda d: d.isoformat(),
+)
+def test_oldest_index_uses_folder_links_kept_as_given(day: date) -> None:
+    # Arrange: saved 2003 index, whose links are /boarddocs/press/monetary/YYYY/YYYYMMDD/
+
+    # Act
+    releases = {r.release_date: r for r in statement_releases(HISTORICAL_2003)}
+
+    # Assert
+    expected = f"https://www.federalreserve.gov/boarddocs/press/monetary/{day.year}/{day:%Y%m%d}/default.htm"
+    assert releases[day].url == expected
+
+
+def test_oldest_index_yields_the_eight_scheduled_meetings() -> None:
+    # Arrange / Act
+    releases = statement_releases(HISTORICAL_2003)
+
+    # Assert
+    assert len(releases) == 8
+    assert {r.release_date.year for r in releases} == {2003}
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        pytest.param("FOMC statement", DocType.STATEMENT, id="older_title"),
+        pytest.param("Federal Reserve issues FOMC statement", DocType.STATEMENT, id="newer_title"),
+        pytest.param(
+            "FOMC statement: The Federal Reserve is providing liquidity",
+            DocType.OTHER_RELEASE,
+            id="subtitle_means_not_a_meeting_statement",
+        ),
+        pytest.param(
+            "Statement Regarding Monetary Policy Implementation",
+            DocType.OTHER_RELEASE,
+            id="implementation_statement",
+        ),
+        pytest.param("", DocType.OTHER_RELEASE, id="empty_title"),
+    ],
+)
+def test_classify_tags_only_ordinary_statement_titles(title: str, expected: DocType) -> None:
+    # Arrange: title as parsed from the page
+
+    # Act
+    result = classify(title)
+
+    # Assert
+    assert result is expected
