@@ -6,12 +6,14 @@ from pathlib import Path
 
 import duckdb
 
+from cbce.eval.dev_report import dev_config, eval_dev, format_table, real_predictions
 from cbce.ingest import ingest
 from cbce.reparse import reparse
 from cbce.sources.base import Fetcher
 from cbce.sources.fed.adapter import FedAdapter
 from cbce.sources.fetch import http_fetch, rate_limited
 from cbce.store.ddl import create_schema
+from cbce.store.runs import DirtyTreeError
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,6 +31,14 @@ def build_parser() -> argparse.ArgumentParser:
         "reparse", help="re-derive documents and sentences from stored raw files (no network)"
     )
     redo.add_argument("--db", type=Path, default=Path("data/processed/cbce.duckdb"))
+    dev = commands.add_parser(
+        "eval-dev", help="score every baseline on the dev split and record the run"
+    )
+    dev.add_argument("--no-record", action="store_true", help="print only; never reaches the site")
+    dev.add_argument("--no-encoder", action="store_true", help="skip the slow supervised encoder")
+    dev.add_argument("--db", type=Path, default=Path("data/processed/cbce.duckdb"))
+    dev.add_argument("--raw", type=Path, default=Path("data/raw"))
+    dev.add_argument("--cache", type=Path, default=Path("data/processed/cache"))
     return parser
 
 
@@ -42,6 +52,24 @@ def main(argv: Sequence[str] | None = None, *, fetch: Fetcher | None = None) -> 
             f"documents={report.documents} reclassified={report.reclassified} "
             f"reidentified={report.reidentified}"
         )
+        return 0
+    if args.command == "eval-dev":
+        conn = duckdb.connect(str(args.db))
+        create_schema(conn)
+        try:
+            metrics, run = eval_dev(
+                conn,
+                Path.cwd(),
+                args.raw,
+                real_predictions(args.raw, args.cache, include_encoder=not args.no_encoder),
+                dev_config(include_encoder=not args.no_encoder),
+                record=not args.no_record,
+            )
+        except DirtyTreeError as error:
+            print(f"refused: {error}")
+            return 2
+        print(format_table(metrics))
+        print(f"recorded as {run.run_id}" if run else "NOT RECORDED: not usable for any figure")
         return 0
     fetcher = fetch or rate_limited(http_fetch, args.interval)
     args.db.parent.mkdir(parents=True, exist_ok=True)
