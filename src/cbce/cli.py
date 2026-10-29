@@ -7,6 +7,7 @@ from pathlib import Path
 import duckdb
 
 from cbce.ingest import ingest
+from cbce.reparse import reparse
 from cbce.sources.base import Fetcher
 from cbce.sources.fed.adapter import FedAdapter
 from cbce.sources.fetch import http_fetch, rate_limited
@@ -24,11 +25,24 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--refetch", action="store_true", help="re-check pages already stored")
     run.add_argument("--db", type=Path, default=Path("data/processed/cbce.duckdb"))
     run.add_argument("--raw", type=Path, default=Path("data/raw"))
+    redo = commands.add_parser(
+        "reparse", help="re-derive documents and sentences from stored raw files (no network)"
+    )
+    redo.add_argument("--db", type=Path, default=Path("data/processed/cbce.duckdb"))
     return parser
 
 
 def main(argv: Sequence[str] | None = None, *, fetch: Fetcher | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "reparse":
+        conn = duckdb.connect(str(args.db))
+        create_schema(conn)
+        report = reparse(FedAdapter(), conn)
+        print(
+            f"documents={report.documents} reclassified={report.reclassified} "
+            f"reidentified={report.reidentified}"
+        )
+        return 0
     fetcher = fetch or rate_limited(http_fetch, args.interval)
     args.db.parent.mkdir(parents=True, exist_ok=True)
     conn = duckdb.connect(str(args.db))

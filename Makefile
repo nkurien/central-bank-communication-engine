@@ -1,4 +1,4 @@
-.PHONY: setup test lint ingest
+.PHONY: setup test lint ingest reparse
 
 setup:
 	uv sync
@@ -12,3 +12,7 @@ lint:
 # Needs CBCE_CONTACT set. Example: make ingest ARGS="--first-year 2021 --limit 10"
 ingest:
 	uv run python -m cbce.cli ingest $(ARGS)
+
+# Re-derive documents and sentences from data/raw. No network.
+reparse:
+	uv run python -m cbce.cli reparse
