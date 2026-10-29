@@ -1,0 +1,66 @@
+"""Federal Reserve adapter: FOMC statements."""
+
+import re
+from datetime import date
+
+from bs4 import BeautifulSoup
+
+from cbce.sources.base import Fetcher, ParsedDocument, Release
+from cbce.sources.fed.statement import parse_statement
+from cbce.store.schema import Bank, DocType
+
+BASE_URL = "https://www.federalreserve.gov"
+CALENDAR_URL = f"{BASE_URL}/monetarypolicy/fomccalendars.htm"
+HISTORICAL_URL = BASE_URL + "/monetarypolicy/fomchistorical{year}.htm"
+
+# The calendar page covers this year onward; earlier years have one index page each.
+CALENDAR_FIRST_YEAR = 2021
+
+# Plain 'a' is the statement. 'a1' is the implementation note, 'b' and 'c' are other releases.
+# Old pages use /press/monetary/YYYYMMDDa.htm, current ones /pressreleases/monetaryYYYYMMDDa.htm.
+_STATEMENT_LINK = re.compile(r"monetary/?(\d{4})(\d{2})(\d{2})a\.htm$")
+
+
+def statement_releases(index_html: str) -> list[Release]:
+    """Statement releases linked from a calendar or yearly index page."""
+    found: dict[date, Release] = {}
+    for anchor in BeautifulSoup(index_html, "html.parser").find_all("a", href=True):
+        match = _STATEMENT_LINK.search(anchor["href"])
+        if match is None:
+            continue
+        day = date(*map(int, match.groups()))
+        # Old-style URLs redirect to this form, so one URL scheme serves every year.
+        url = f"{BASE_URL}/newsevents/pressreleases/monetary{day:%Y%m%d}a.htm"
+        found[day] = Release(Bank.FED, DocType.STATEMENT, url, day)
+    return [found[day] for day in sorted(found)]
+
+
+class FedAdapter:
+    bank = Bank.FED
+
+    def __init__(self, first_year: int = 1999, last_year: int | None = None) -> None:
+        self.first_year = first_year
+        self.last_year = last_year
+
+    def discover(self, fetch: Fetcher) -> list[Release]:
+        pages = [CALENDAR_URL] + [
+            HISTORICAL_URL.format(year=year) for year in range(self.first_year, CALENDAR_FIRST_YEAR)
+        ]
+        releases: dict[date, Release] = {}
+        for page in pages:
+            for release in statement_releases(fetch(page).content.decode("utf-8")):
+                if release.release_date.year >= self.first_year and (
+                    self.last_year is None or release.release_date.year <= self.last_year
+                ):
+                    releases[release.release_date] = release
+        return [releases[day] for day in sorted(releases)]
+
+    def parse(self, release: Release, content: bytes) -> ParsedDocument:
+        parsed = parse_statement(content.decode("utf-8"))
+        return ParsedDocument(
+            title=parsed.title,
+            published_at=parsed.published_at,
+            published_at_precision=parsed.published_at_precision,
+            event_ts=parsed.published_at,  # the statement is the market event
+            paragraphs=parsed.paragraphs,
+        )
