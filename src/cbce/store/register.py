@@ -8,7 +8,7 @@ import duckdb
 
 from cbce.sources.base import ParsedDocument, Release
 from cbce.store import raw
-from cbce.store.schema import Document
+from cbce.store.schema import Document, Sentence
 
 
 class Outcome(StrEnum):
@@ -66,3 +66,10 @@ def register_document(
         ],
     )
     return document, Outcome.CHANGED if url_seen else Outcome.NEW
+
+
+def insert_sentences(conn: duckdb.DuckDBPyConnection, sentences: list[Sentence]) -> None:
+    conn.executemany(
+        "INSERT INTO sentences VALUES (?, ?, ?, ?, ?)",
+        [[s.sentence_id, s.doc_id, s.position, s.text, s.section] for s in sentences],
+    )
