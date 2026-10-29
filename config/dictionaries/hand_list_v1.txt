@@ -1,0 +1,68 @@
+# Hand-written hawkish/dovish word list, version 1. Frozen: a change means a new file.
+# Written from general monetary-policy vocabulary before any label was scored with it.
+# Format: <class><TAB><term>. A trailing * matches any word ending. Matching is whole-word,
+# case-insensitive. Multi-word terms match as phrases.
+
+hawkish	tighten*
+hawkish	tighter
+hawkish	hike
+hawkish	hikes
+hawkish	hiking
+hawkish	firming
+hawkish	firmer
+hawkish	restrictive
+hawkish	normaliz*
+hawkish	overheat*
+hawkish	inflationary
+hawkish	inflation pressure*
+hawkish	upward pressure*
+hawkish	rising inflation
+hawkish	higher inflation
+hawkish	elevated inflation
+hawkish	higher interest rate*
+hawkish	higher rate*
+hawkish	raise the target
+hawkish	raising the target
+hawkish	raised the target
+hawkish	increase in the target
+hawkish	remove accommodation
+hawkish	removal of accommodation
+hawkish	tight labor market*
+hawkish	tight labour market*
+hawkish	strong*
+hawkish	robust*
+hawkish	solid
+hawkish	accelerat*
+hawkish	rapid*
+
+dovish	ease
+dovish	eased
+dovish	easing
+dovish	easier
+dovish	accommodative
+dovish	stimulat*
+dovish	lower the target
+dovish	lowering the target
+dovish	lowered the target
+dovish	reduce the target
+dovish	reduced the target
+dovish	cut
+dovish	cuts
+dovish	cutting
+dovish	downward pressure*
+dovish	downside risk*
+dovish	slack
+dovish	weak*
+dovish	soften*
+dovish	subdued
+dovish	sluggish
+dovish	slow*
+dovish	decelerat*
+dovish	declin*
+dovish	deteriorat*
+dovish	contraction
+dovish	recession*
+dovish	disinflation*
+dovish	deflation*
+dovish	lower inflation
+dovish	low inflation
