@@ -1,7 +1,7 @@
 """Sentence-level metrics: macro F1, per-class precision, recall and F1, confusion matrix."""
 
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from cbce.store.schema import Stance
@@ -27,6 +27,19 @@ class Report:
 
 def _ratio(numerator: int, denominator: int) -> float:
     return numerator / denominator if denominator else 0.0  # undefined scores count as 0
+
+
+def macro_f1_from_confusion(confusion: Mapping[tuple[Stance, Stance], int]) -> float:
+    """Macro F1 from (true, predicted) counts. A class with no predictions or no examples
+    scores 0, the same convention as `evaluate`.
+    """
+    total = 0.0
+    for label in LABELS:
+        true_positive = confusion.get((label, label), 0)
+        predicted_total = sum(confusion.get((t, label), 0) for t in LABELS)
+        support = sum(confusion.get((label, p), 0) for p in LABELS)
+        total += _ratio(2 * true_positive, predicted_total + support)
+    return total / len(LABELS)
 
 
 def evaluate(truth: Sequence[Stance], predicted: Sequence[Stance]) -> Report:
