@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -17,6 +18,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 CALENDAR = (FIXTURES / "fomc_calendar.html").read_text(encoding="utf-8")
 HISTORICAL_2000 = (FIXTURES / "fomc_historical_2000.html").read_text(encoding="utf-8")
 HISTORICAL_2003 = (FIXTURES / "fomc_historical_2003.html").read_text(encoding="utf-8")
+HISTORICAL_2008 = (FIXTURES / "fomc_historical_2008.html").read_text(encoding="utf-8")
 HISTORICAL_2006 = (FIXTURES / "fomc_historical_2006.html").read_text(encoding="utf-8")
 STATEMENT_2024 = (FIXTURES / "fomc_statement_2024-01-31.html").read_bytes()
 
@@ -54,16 +56,16 @@ def test_calendar_statements_include_only_real_meeting_dates(
     assert (day in days) is expected_in_result
 
 
-def test_calendar_statements_exclude_notes_and_other_releases() -> None:
-    # Arrange: the page also links implementation notes (a1), strategy statements (b), others
+def test_calendar_releases_exclude_implementation_notes_but_keep_every_letter_suffix() -> None:
+    # Arrange: the page links implementation notes (a1), strategy statements (b) and others (c)
 
     # Act
-    releases = statement_releases(CALENDAR)
+    urls = [release.url for release in statement_releases(CALENDAR)]
 
     # Assert
-    assert all(release.url.endswith("a.htm") for release in releases)
-    assert not any("a1.htm" in release.url or "b.htm" in release.url for release in releases)
-    assert len({release.release_date for release in releases}) == len(releases)
+    assert not any(re.search(r"\d[a-z]\d\.htm$", url) for url in urls)
+    assert any(url.endswith("b.htm") for url in urls)
+    assert len(set(urls)) == len(urls)
 
 
 def test_calendar_statements_are_sorted_oldest_first() -> None:
@@ -214,6 +216,8 @@ def test_oldest_index_yields_the_eight_scheduled_meetings() -> None:
             DocType.OTHER_RELEASE,
             id="colon_subtitle_with_and_later_on",
         ),
+        pytest.param("FOMC Statement", DocType.STATEMENT, id="capital_s_2005"),
+        pytest.param("fomc STATEMENT", DocType.STATEMENT, id="any_case"),
         pytest.param("", DocType.OTHER_RELEASE, id="empty_title"),
     ],
 )
@@ -243,3 +247,59 @@ def test_earliest_index_uses_general_folder_links(day: date) -> None:
         f"https://www.federalreserve.gov/boarddocs/press/general/{day.year}/{day:%Y%m%d}/default.htm"
     )
     assert len(releases) == 8
+
+
+@pytest.mark.parametrize(
+    ("suffix_url", "day"),
+    [
+        ("monetary20080122b.htm", date(2008, 1, 22)),
+        ("monetary20081216b.htm", date(2008, 12, 16)),
+        ("monetary20080130a.htm", date(2008, 1, 30)),
+    ],
+)
+def test_statements_filed_under_a_b_suffix_are_discovered(suffix_url: str, day: date) -> None:
+    # Arrange: on these days another release took the 'a' slot, so the statement is 'b'
+
+    # Act
+    releases = {r.url.rsplit("/", 1)[-1]: r for r in statement_releases(HISTORICAL_2008)}
+
+    # Assert
+    assert releases[suffix_url].release_date == day
+
+
+def test_two_releases_on_one_day_are_both_kept() -> None:
+    # Arrange
+    html = (
+        '<a href="/newsevents/press/monetary/20081216a.htm">x</a>'
+        '<a href="/newsevents/press/monetary/20081216b.htm">y</a>'
+    )
+
+    # Act
+    releases = statement_releases(html)
+
+    # Assert
+    assert [r.url.rsplit("/", 1)[-1] for r in releases] == [
+        "monetary20081216a.htm",
+        "monetary20081216b.htm",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("page", "expected_title"),
+    [
+        ("fomc_statement_20080122b.html", "FOMC statement"),
+        ("fomc_statement_20081216b.html", "FOMC statement"),
+    ],
+)
+def test_b_suffix_pages_parse_as_ordinary_meeting_statements(
+    page: str, expected_title: str
+) -> None:
+    # Arrange
+    release = Release(Bank.FED, DocType.STATEMENT, "https://example.test/b", date(2008, 12, 16))
+
+    # Act
+    parsed = FedAdapter().parse(release, (FIXTURES / page).read_bytes())
+
+    # Assert
+    assert parsed.title == expected_title
+    assert parsed.doc_type is DocType.STATEMENT
