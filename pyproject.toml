@@ -8,6 +8,8 @@ dependencies = [
     "duckdb>=1.0",    # local analytical store
     "pyarrow>=16",    # Parquet tables
     "beautifulsoup4>=4.12",  # tolerant HTML parsing for bank sites
+    "transformers>=5.22.0",  # FinBERT baseline and the supervised encoder
+    "torch>=2.15.0",  # runtime for transformers models, run locally on CPU
 ]
 
 [dependency-groups]
