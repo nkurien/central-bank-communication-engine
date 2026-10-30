@@ -301,3 +301,24 @@ def test_the_test_split_is_never_loaded(
 
     # Assert: 1998 and 2002 are test years under the frozen rule
     assert years == {1996, 1997, 1999, 2000, 2001}
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        pytest.param({"model_version": "digest-2"}, id="weights"),
+        pytest.param({"prompt_sha256": "def"}, id="prompt_text"),
+        pytest.param({"seed": 1}, id="seed"),
+    ],
+)
+def test_llm_settings_are_part_of_the_run_config_hash(changed: dict[str, object]) -> None:
+    # Arrange
+    base = {"model": "m", "model_version": "digest-1", "prompt_sha256": "abc", "seed": 0}
+
+    # Act
+    original = config_hash(dev_config(include_encoder=False, llm=base))
+    altered = config_hash(dev_config(include_encoder=False, llm={**base, **changed}))
+
+    # Assert
+    assert original != altered
+    assert original != config_hash(dev_config(include_encoder=False))

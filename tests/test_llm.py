@@ -161,3 +161,28 @@ def test_shipped_prompt_loads() -> None:
 
     # Assert
     assert "{sentence}" in prompt.user_template
+
+
+def test_excluded_list_describes_only_the_latest_call() -> None:
+    # Arrange
+    scorer, _ = make_scorer(FakeClient("bad", "bad", GOOD))
+    scorer.score([ScoreInput("s1", "first")], "run-1")
+
+    # Act
+    scorer.score([ScoreInput("s2", "second")], "run-2")
+
+    # Assert
+    assert scorer.excluded == []
+
+
+def test_prompt_hash_changes_when_the_file_changes(tmp_path: Path) -> None:
+    # Arrange
+    path = tmp_path / "stance_v9.md"
+    path.write_text("Be brief.\n---\nSentence: {sentence}\n")
+    before = Prompt.load(path).sha256
+
+    # Act
+    path.write_text("Be thorough.\n---\nSentence: {sentence}\n")
+
+    # Assert
+    assert Prompt.load(path).sha256 != before

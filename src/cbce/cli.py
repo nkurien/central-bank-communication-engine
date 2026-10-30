@@ -1,14 +1,23 @@
 """Command line entry point: `python -m cbce.cli ingest`."""
 
 import argparse
+import logging
 from collections.abc import Sequence
 from pathlib import Path
 
 import duckdb
 
-from cbce.eval.dev_report import dev_config, eval_dev, format_table, real_predictions
+from cbce.eval.dev_report import (
+    ExcludedSentencesError,
+    dev_config,
+    eval_dev,
+    format_table,
+    real_predictions,
+)
 from cbce.ingest import ingest
 from cbce.reparse import reparse
+from cbce.scoring.llm import CallCache, LLMScorer, Prompt
+from cbce.scoring.llm_client import OllamaClient
 from cbce.sources.base import Fetcher
 from cbce.sources.fed.adapter import FedAdapter
 from cbce.sources.fetch import http_fetch, rate_limited
@@ -39,6 +48,8 @@ def build_parser() -> argparse.ArgumentParser:
     dev.add_argument("--db", type=Path, default=Path("data/processed/cbce.duckdb"))
     dev.add_argument("--raw", type=Path, default=Path("data/raw"))
     dev.add_argument("--cache", type=Path, default=Path("data/processed/cache"))
+    dev.add_argument("--llm", metavar="MODEL", help="also score with this local Ollama model")
+    dev.add_argument("--prompt", type=Path, default=Path("prompts/stance_v1.md"))
     return parser
 
 
@@ -56,18 +67,38 @@ def main(argv: Sequence[str] | None = None, *, fetch: Fetcher | None = None) -> 
     if args.command == "eval-dev":
         conn = duckdb.connect(str(args.db))
         create_schema(conn)
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+        llm_scorer, llm_config = None, None
+        if args.llm:
+            client = OllamaClient.connect(args.llm)
+            prompt = Prompt.load(args.prompt)
+            llm_scorer = LLMScorer(client, prompt, CallCache(conn))
+            llm_config = {
+                "model": client.model,
+                "model_version": client.model_version,
+                "prompt_version": prompt.version,
+                "prompt_sha256": prompt.sha256,
+                "temperature": 0,
+                "seed": 0,
+                "think": False,
+            }
         try:
             metrics, run = eval_dev(
                 conn,
                 Path.cwd(),
                 args.raw,
-                real_predictions(args.raw, args.cache, include_encoder=not args.no_encoder),
-                dev_config(include_encoder=not args.no_encoder),
+                real_predictions(
+                    args.raw, args.cache, include_encoder=not args.no_encoder, llm=llm_scorer
+                ),
+                dev_config(include_encoder=not args.no_encoder, llm=llm_config),
                 record=not args.no_record,
             )
         except DirtyTreeError as error:
             print(f"refused: {error}")
             return 2
+        except ExcludedSentencesError as error:
+            print(f"not recorded: {error}")
+            return 3
         print(format_table(metrics))
         print(f"recorded as {run.run_id}" if run else "NOT RECORDED: not usable for any figure")
         return 0

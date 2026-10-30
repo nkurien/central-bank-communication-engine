@@ -21,6 +21,7 @@ from cbce.scoring import encoder
 from cbce.scoring.base import ScoreInput
 from cbce.scoring.dictionary import LM_MASTER_DICTIONARY_SHA256, LMToneScorer, WordListScorer
 from cbce.scoring.finbert import FINBERT_MODEL, FINBERT_REVISION, FinBertScorer
+from cbce.scoring.llm import LLMScorer
 from cbce.scoring.majority import MajorityScorer
 from cbce.store.runs import DirtyTreeError, canonical_json, git_state, new_run_id, record_run
 from cbce.store.schema import Run, Stance
@@ -32,7 +33,9 @@ CV_FOLDS = 5
 Predict = Callable[[Sequence[LabelledSentence], str], dict[str, list[Stance]]]
 
 
-def dev_config(*, include_encoder: bool = True) -> dict[str, Any]:
+def dev_config(
+    *, include_encoder: bool = True, llm: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
     """Everything that determines the table, so its hash identifies the experiment."""
     config: dict[str, Any] = {
         "split": SPLIT_NAME,
@@ -52,6 +55,8 @@ def dev_config(*, include_encoder: bool = True) -> dict[str, Any]:
             "train": asdict(encoder.TrainConfig()),
             "folds": CV_FOLDS,
         }
+    if llm is not None:
+        config["scorers"]["llm"] = dict(llm)
     return config
 
 
@@ -148,7 +153,17 @@ def cached_encoder_predictions(
     return [s.stance for s in scores], False
 
 
-def real_predictions(raw_root: Path, cache_dir: Path, *, include_encoder: bool) -> Predict:
+class ExcludedSentencesError(RuntimeError):
+    """The LLM left sentences unscored, so its predictions no longer line up with the others."""
+
+
+def real_predictions(
+    raw_root: Path,
+    cache_dir: Path,
+    *,
+    include_encoder: bool,
+    llm: LLMScorer | None = None,
+) -> Predict:
     """Predictions from every real scorer for the given dev sentences."""
 
     def predict(dev: Sequence[LabelledSentence], run_id: str) -> dict[str, list[Stance]]:
@@ -159,9 +174,16 @@ def real_predictions(raw_root: Path, cache_dir: Path, *, include_encoder: bool) 
             WordListScorer.from_file(HAND_LIST, "hand_list_v1"),
             FinBertScorer.load(),
         ]
+        if llm is not None:
+            scorers.append(llm)
         predicted = {
             scorer.name: [p.stance for p in scorer.score(items, run_id)] for scorer in scorers
         }
+        if llm is not None and llm.excluded:
+            # Every attempt is cached, so rerunning after the policy is settled costs nothing.
+            raise ExcludedSentencesError(
+                f"{len(llm.excluded)} sentences failed validation twice: {llm.excluded[:5]}..."
+            )
         if include_encoder:
             predicted["encoder_cv"], _ = cached_encoder_predictions(dev, cache_dir, run_id)
         return predicted

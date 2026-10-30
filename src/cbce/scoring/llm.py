@@ -43,11 +43,16 @@ class Prompt:
     version: str
     system: str
     user_template: str  # contains {sentence}
+    sha256: str = ""  # of the whole file, so a silent edit changes the run config
 
     @classmethod
     def load(cls, path: Path) -> "Prompt":
-        system, user = path.read_text().split("\n---\n", maxsplit=1)
-        return cls(version=path.stem, system=system.strip(), user_template=user.strip())
+        text = path.read_text()
+        system, user = text.split("\n---\n", maxsplit=1)
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        return cls(
+            version=path.stem, system=system.strip(), user_template=user.strip(), sha256=digest
+        )
 
     def render(self, sentence: str) -> str:
         # replace, not format: the template may contain literal braces
@@ -116,8 +121,11 @@ class LLMScorer:
 
     def score(self, items: Sequence[ScoreInput], run_id: str) -> list[StanceScore]:
         """Scores in input order. Excluded sentences are left out and listed in `excluded`."""
+        self.excluded = []
         scores = []
-        for item in items:
+        for done, item in enumerate(items, start=1):
+            if done % 100 == 0:
+                log.info("scored %d of %d", done, len(items))
             parsed = self._score_one(item)
             if parsed is None:
                 self.excluded.append(item.sentence_id)
