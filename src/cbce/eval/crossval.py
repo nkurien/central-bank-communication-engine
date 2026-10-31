@@ -32,6 +32,10 @@ def out_of_fold_predictions(
     `fit` trains on the sentences it is given and returns a scorer. Results come back in
     the order of `sentences`.
     """
+    ids = [s.sentence_id for s in sentences]
+    if len(set(ids)) != len(ids):
+        # predictions are merged by id, so a repeated id would hand one sentence another's score
+        raise ValueError("sentence ids are not unique")
     fold_of_year = assign_folds((s.year for s in sentences), k)
     predictions: dict[str, StanceScore] = {}
     for fold in range(k):

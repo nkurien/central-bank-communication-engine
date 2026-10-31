@@ -159,3 +159,16 @@ def test_loading_does_not_leave_the_interpreter_unable_to_exit(
 
     # Assert
     assert result.stdout.strip() == "3"
+
+
+def test_repeated_index_values_do_not_make_sentence_ids_collide(tmp_path: Path) -> None:
+    # Arrange: the real files repeat `index` within one file
+    rows = {"train": [(5, "a", 1999, 1), (5, "b", 2000, 0), (5, "c", 1999, 2)], "test": []}
+    store = build_store(tmp_path, {"train": rows["train"]})
+
+    # Act
+    dev = load_labelled(tmp_path, "dev", files=store)
+
+    # Assert
+    assert [s.sentence_id for s in dev] == ["tdw-train-0", "tdw-train-1", "tdw-train-2"]
+    assert [s.text for s in dev] == ["a", "b", "c"]

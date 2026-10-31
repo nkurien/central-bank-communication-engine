@@ -105,3 +105,15 @@ def test_held_out_predictions_come_from_a_model_fitted_without_those_sentences()
     # Assert: a model that never saw 2000 cannot predict hawkish for it
     by_id = {p.sentence_id: p.stance for p in predictions}
     assert all(by_id[f"s{i}"] is D for i in range(0, 24, 6))
+
+
+def test_repeated_sentence_ids_are_refused() -> None:
+    # Arrange
+    data = sentences()
+    data[1] = LabelledSentence(data[0].sentence_id, "other text", 2001, N)
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="not unique"):
+        out_of_fold_predictions(
+            data, lambda train: MajorityScorer.fit(s.stance for s in train), "run-1", k=3
+        )

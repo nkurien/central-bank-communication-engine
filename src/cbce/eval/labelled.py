@@ -49,6 +49,8 @@ def load_labelled(
         # ParquetFile, not pq.read_table: read_table on an in-memory buffer leaves a thread
         # pool behind that stops the interpreter from exiting.
         table = pq.ParquetFile(pa.BufferReader(raw.get(raw_root, digest))).read()
+        # The file's own `index` column repeats (1,984 train rows hold 1,083 distinct values),
+        # so the id uses the row position, which is unique and fixed by the pinned digest.
         rows = zip(
             table.column("index").to_pylist(),
             table.column("sentence").to_pylist(),
@@ -56,12 +58,15 @@ def load_labelled(
             table.column("label").to_pylist(),
             strict=True,
         )
-        for index, text, year, label in rows:
+        for row, (index, text, year, label) in enumerate(rows):
             if split_for_year(year) != split:
                 continue
             if label not in _LABEL_TO_STANCE:
                 raise ValueError(f"unknown label {label!r} at {source}[{index}]")
             sentences.append(
-                LabelledSentence(f"tdw-{source}-{index}", text, year, _LABEL_TO_STANCE[label])
+                LabelledSentence(f"tdw-{source}-{row}", text, year, _LABEL_TO_STANCE[label])
             )
+    ids = [s.sentence_id for s in sentences]
+    if len(set(ids)) != len(ids):
+        raise ValueError("sentence ids are not unique")
     return sorted(sentences, key=lambda s: s.sentence_id)
